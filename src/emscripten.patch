@@ -23,7 +23,7 @@ index 0a9e3a5..5d0f802 100644
  		if (cpu_delay != 0) {
  	        if (++instr_cnt >= cpu_delay) {
 diff --git a/RunCPM/main.c b/RunCPM/main.c
-index 6aac003..9fe9df7 100644
+index 6aac003..4a4b487 100644
 --- a/RunCPM/main.c
 +++ b/RunCPM/main.c
 @@ -26,7 +26,9 @@ This should be the only file modified for portability. Any other file
@@ -37,3 +37,32 @@ index 6aac003..9fe9df7 100644
          #include "abstraction_windows.h"
      #else
          #include "abstraction_posix.h"
+@@ -74,8 +76,8 @@ int main(int argc, char *argv[]) {
+     _puts("CPU is ");
+     _puts(CPU_IS);
+     _puts("\r\n");
+-#ifndef DEBUG
+-    Z80estimateClock();
++#if !defined(DEBUG) && !defined(__EMSCRIPTEN__)
++    Z80estimateClock();   // cosmetic speed test; ~290M instructions, pathologically slow under the browser yield loop, so skip it
+ #endif
+     _puts("BIOS at 0x");
+     _puthex16(BIOSjmppage);
+@@ -106,7 +108,17 @@ int main(int argc, char *argv[]) {
+     _PatchBIOS();
+     #endif
+     while (TRUE) {
++#ifdef __EMSCRIPTEN__
++        // Print the version banner only on the first (cold) boot. z88dk CP/M
++        // programs warm-boot (jp 0) when they exit, which re-enters this loop;
++        // reprinting the banner on every program exit is noise in the IDE.
++        {
++            static uint8 em_banner_shown = 0;
++            if (!em_banner_shown) { _puts(CCPHEAD); em_banner_shown = 1; }
++        }
++#else
+         _puts(CCPHEAD);
++#endif
+         _PatchCPM(); // Patches the CP/M entry points and other things in
+         Status = 0;
+     #ifdef CCP_INTERNAL
