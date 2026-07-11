@@ -22,7 +22,7 @@
 // ============ VT100 terminal: line-oriented CCP + full-screen curses apps ============
 const COLS = 80, ROWS = 24;
 const termEl = document.getElementById('term');
-let grid, curR, curC, dirty = true, cursorOn = true;
+let grid, curR, curC, dirty = true, cursorOn = true, cursorVisible = true;
 function clear() { grid = Array.from({length:ROWS}, () => Array(COLS).fill(' ')); }
 function home() { curR = 0; curC = 0; }
 clear(); home();
@@ -75,7 +75,9 @@ function writeByte(ch) {
         else if (n===2){ grid[curR].fill(' '); }
         break; }
       case 'm': break;   // SGR attributes: ignored
-      case 'h': case 'l': break;   // DEC private set/reset: ignored
+      case 'h': case 'l':          // DEC private set/reset
+        if (par === '?25') { cursorVisible = (c === 'h'); dirty = true; }  // DECTCEM: hide (l) / show (h) cursor
+        break;
       default: break;
     }
     st = 'NORMAL'; return;
@@ -84,7 +86,7 @@ function writeByte(ch) {
 
 function render() {
   const rows = grid.map((row, r) => {
-    if (r === curR && cursorOn) {           // draw a block cursor at the caret
+    if (r === curR && cursorOn && cursorVisible) {   // block cursor at caret (DECTCEM ESC[?25l can hide it)
       const line = row.slice();
       line[curC] = '█';
       return line.join('');

@@ -83,7 +83,7 @@ cd web && python3 -m http.server 8799
 
 ## What's in web/
 
-`index.html` is the main page: an 80 by 24 terminal with a small VT100 compatibility layer such as cursor addressing, erase-to-end-of-line and erase-display, relative cursor moves, (it ignores the colour and DEC-private sequences it does not understand). That is enough for most line-oriented programs (the command processor, DIR, BASIC) and full-screen curses programs. It has a blinking block cursorand nothing is clipped when the screen scrolls. It boots to the prompt with the default disk loaded, so `DIR` shows something straight away.
+`index.html` is the main page: an 80 by 24 terminal with a small VT100 compatibility layer such as cursor addressing, erase-to-end-of-line and erase-display, relative cursor moves, and `ESC[?25l`/`ESC[?25h` to hide or show the cursor (it ignores the colour and other DEC-private sequences it does not understand). That is enough for most line-oriented programs (the command processor, DIR, BASIC) and full-screen curses programs. It has a blinking block cursor, and nothing is clipped when the screen scrolls. It boots to the prompt with the default disk loaded, so `DIR` shows something straight away.
 
 `rogue.html` is the same terminal wired to auto-run: it just preloads `ROGUE.COM` and launches it for you.
 
