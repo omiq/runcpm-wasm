@@ -121,7 +121,10 @@ globalThis.CPM = {
 };
 
 // ============ default disk: files preloaded onto drive A user 0 (see web/disk/) ============
-const DISK = ['README.TXT', 'HELLO.COM', 'GREET.COM', 'ROGUE.COM'];
+const DISK = ['README.TXT', 'HELLO.COM', 'GREET.COM', 'ROGUE.COM', 'WELCOME.COM'];
+// AUTOEXEC.TXT is not a drive file: RunCPM looks for it in the MEMFS working
+// directory (FILEBASE "./"), alongside the A/, B/... drive folders, and runs
+// its single command line on cold boot. See loadDisk().
 
 // Optionally, disk/manifest.json can define a fuller multi-drive setup:
 //   { "drives": { "A": ["ASM.COM", ...], "B": [...], "C": [...] } }
@@ -159,6 +162,14 @@ async function loadDisk(FS) {
       FS.writeFile('/A/0/' + name, buf);
     }
   }
+
+  // AUTOEXEC.TXT lives at the MEMFS root (FILEBASE "./"), not inside a drive:
+  // that's where RunCPM's cold-boot autoexec check (_sys_exists) looks. Its one
+  // command line runs before the first prompt. Optional; skip if not served.
+  try {
+    const r = await fetch('disk/AUTOEXEC.TXT');
+    if (r.ok) FS.writeFile('/AUTOEXEC.TXT', new Uint8Array(await r.arrayBuffer()));
+  } catch (e) { /* no autoexec: boot straight to the prompt */ }
 }
 
 // ============ boot RunCPM ============

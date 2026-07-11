@@ -22,6 +22,19 @@ index 0a9e3a5..5d0f802 100644
          /* Throttling to CPU_DELAY instructions */
  		if (cpu_delay != 0) {
  	        if (++instr_cnt >= cpu_delay) {
+diff --git a/RunCPM/globals.h b/RunCPM/globals.h
+index e3c4370..1e503da 100644
+--- a/RunCPM/globals.h
++++ b/RunCPM/globals.h
+@@ -298,7 +298,7 @@ static uint8 multiRecordCount = 1; /* default = 1 record */
+ /* definition of an autoexec functionality */
+ static uint8 firstBoot = TRUE;  // True if this is the first boot
+ #define AUTOEXEC "AUTOEXEC.TXT" // Name of the autoexec file
+-#define BOOTONLY FALSE          // If TRUE, the autoexec file will only be loaded on the first boot
++#define BOOTONLY TRUE           // If TRUE, the autoexec file will only be loaded on the first boot
+ 
+ #ifdef CPM3
+ /* BDOS function 47 (Chain To Program) state: the command line a program
 diff --git a/RunCPM/main.c b/RunCPM/main.c
 index 6aac003..4a4b487 100644
 --- a/RunCPM/main.c

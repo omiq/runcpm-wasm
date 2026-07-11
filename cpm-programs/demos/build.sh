@@ -8,7 +8,8 @@ cd "$(dirname "$0")"
 
 : "${ZCC:=zcc}"        # override if z88dk lives elsewhere, e.g. ZCC=~/z88dk/bin/zcc
 "$ZCC" +cpm -create-app hello.c -o hello   # emits HELLO.COM
+"$ZCC" +cpm -create-app welcome.c -o welcome   # emits WELCOME.COM
 pasmo greet.asm GREET.COM
 
-cp HELLO.COM GREET.COM README.TXT ../../web/disk/
-echo "built HELLO.COM ($(wc -c <HELLO.COM) b), GREET.COM ($(wc -c <GREET.COM) b); staged to web/disk/"
+cp HELLO.COM GREET.COM WELCOME.COM README.TXT ../../web/disk/
+echo "built HELLO.COM ($(wc -c <HELLO.COM) b), WELCOME.COM ($(wc -c <WELCOME.COM) b), GREET.COM ($(wc -c <GREET.COM) b); staged to web/disk/"
