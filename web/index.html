@@ -4,57 +4,99 @@
 <meta charset="utf-8">
 <title>RunCPM (wasm) - CP/M 2.2 in the browser</title>
 <style>
-  html, body { margin:0; background:#111; color:#c8c8c8; height:100%;
+  html, body { margin:0; background:#111; color:#c8c8c8; min-height:100%;
                font:14px/1.2 ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
   #wrap { display:flex; flex-direction:column; align-items:center; padding:10px; }
+  /* Size to the full 24-row grid so nothing is clipped when the screen scrolls. */
   #term { white-space:pre; background:#000; color:#33ff66; padding:10px;
-          width:80ch; height:25em; overflow:hidden; border:1px solid #333;
-          outline:none; }
+          width:80ch; line-height:1.2; border:1px solid #333; outline:none; }
   #hint { color:#777; font-size:12px; margin-top:6px; }
 </style>
 </head>
 <body>
 <div id="wrap">
   <div id="term" tabindex="0"></div>
-  <div id="hint">click the screen, then type. RunCPM CP/M 2.2 (MIT, internal CCP).</div>
+  <div id="hint">click the screen, then type. Try DIR, or TYPE README.TXT, or ROGUE.</div>
 </div>
 <script>
-// ---- glass-TTY: a fixed 80x25 char grid driven by CP/M console bytes ----
-const COLS = 80, ROWS = 25;
+// ============ VT100 terminal: line-oriented CCP + full-screen curses apps ============
+const COLS = 80, ROWS = 24;
 const termEl = document.getElementById('term');
-let grid, curR, curC;
-function clearScreen() {
-  grid = Array.from({length: ROWS}, () => Array(COLS).fill(' '));
-  curR = 0; curC = 0;
-  render();
+let grid, curR, curC, dirty = true, cursorOn = true;
+function clear() { grid = Array.from({length:ROWS}, () => Array(COLS).fill(' ')); }
+function home() { curR = 0; curC = 0; }
+clear(); home();
+
+let st = 'NORMAL', par = '';
+function params(def) {
+  const p = par.split(';').map(x => x === '' ? def : parseInt(x,10));
+  return p.length ? p : [def];
 }
-function scroll() { grid.shift(); grid.push(Array(COLS).fill(' ')); curR = ROWS - 1; }
-function putByte(ch) {
-  if (ch === 0x0C) { clearScreen(); return; }        // form feed
-  if (ch === 0x0A) { curR++; if (curR >= ROWS) scroll(); render(); return; } // LF
-  if (ch === 0x0D) { curC = 0; return; }              // CR
-  if (ch === 0x08) { if (curC > 0) curC--; render(); return; } // BS
-  if (ch === 0x07) return;                             // bell
-  if (ch < 32) return;                                 // ignore other ctrl
-  grid[curR][curC] = String.fromCharCode(ch);
-  curC++;
-  if (curC >= COLS) { curC = 0; curR++; if (curR >= ROWS) scroll(); }
-  render();
+function clampCur() { if (curR<0) curR=0; if (curR>=ROWS) curR=ROWS-1; if (curC<0) curC=0; if (curC>=COLS) curC=COLS-1; }
+function newline() { curR++; if (curR>=ROWS){ curR=ROWS-1; grid.shift(); grid.push(Array(COLS).fill(' ')); } }
+
+function writeByte(ch) {
+  dirty = true;
+  if (st === 'NORMAL') {
+    if (ch === 0x1B) { st = 'ESC'; return; }
+    if (ch === 0x0A) { newline(); return; }
+    if (ch === 0x0D) { curC = 0; return; }
+    if (ch === 0x08) { if (curC>0) curC--; return; }
+    if (ch === 0x09) { curC = (curC + 8) & ~7; if (curC>=COLS) curC=COLS-1; return; }
+    if (ch === 0x0C) { clear(); home(); return; }
+    if (ch === 0x07) return;                 // bell
+    if (ch < 32) return;
+    grid[curR][curC] = String.fromCharCode(ch);
+    curC++; if (curC>=COLS){ curC=0; newline(); }
+    return;
+  }
+  if (st === 'ESC') {
+    if (ch === 0x5B) { st = 'CSI'; par = ''; return; }   // '['
+    if (ch === 0x4D) { if (curR>0) curR--; }             // RI reverse index (approx)
+    st = 'NORMAL'; return;
+  }
+  if (st === 'CSI') {
+    if ((ch>=0x30 && ch<=0x39) || ch===0x3B || ch===0x3F) { par += String.fromCharCode(ch); return; }
+    const c = String.fromCharCode(ch);
+    switch (c) {
+      case 'H': case 'f': { const p = params(1); curR=(p[0]||1)-1; curC=(p[1]||1)-1; clampCur(); break; }
+      case 'A': curR -= (params(1)[0]||1); clampCur(); break;
+      case 'B': curR += (params(1)[0]||1); clampCur(); break;
+      case 'C': curC += (params(1)[0]||1); clampCur(); break;
+      case 'D': curC -= (params(1)[0]||1); clampCur(); break;
+      case 'J': { const n = params(0)[0];
+        if (n===2){ clear(); }
+        else if (n===0){ for(let x=curC;x<COLS;x++) grid[curR][x]=' '; for(let y=curR+1;y<ROWS;y++) grid[y].fill(' '); }
+        else if (n===1){ for(let y=0;y<curR;y++) grid[y].fill(' '); for(let x=0;x<=curC;x++) grid[curR][x]=' '; }
+        break; }
+      case 'K': { const n = params(0)[0];
+        if (n===0){ for(let x=curC;x<COLS;x++) grid[curR][x]=' '; }
+        else if (n===1){ for(let x=0;x<=curC;x++) grid[curR][x]=' '; }
+        else if (n===2){ grid[curR].fill(' '); }
+        break; }
+      case 'm': break;   // SGR attributes: ignored
+      case 'h': case 'l': break;   // DEC private set/reset: ignored
+      default: break;
+    }
+    st = 'NORMAL'; return;
+  }
 }
+
 function render() {
-  // draw cursor as an underscore-ish block by swapping the char under it
   const rows = grid.map((row, r) => {
-    if (r === curR) {
+    if (r === curR && cursorOn) {           // draw a block cursor at the caret
       const line = row.slice();
-      line[curC] = line[curC] === ' ' ? '█' : line[curC];
+      line[curC] = '█';
       return line.join('');
     }
     return row.join('');
   });
   termEl.textContent = rows.join('\n');
 }
+(function raf(){ if (dirty) { dirty = false; render(); } requestAnimationFrame(raf); })();
+setInterval(() => { cursorOn = !cursorOn; dirty = true; }, 530);   // blink
 
-// ---- keyboard -> CP/M input queue ----
+// ============ keyboard -> CP/M input queue ============
 const inQueue = [];
 termEl.addEventListener('keydown', (e) => {
   let c = null;
@@ -62,25 +104,26 @@ termEl.addEventListener('keydown', (e) => {
   else if (e.key === 'Backspace') c = 0x08;
   else if (e.key === 'Tab') c = 0x09;
   else if (e.key === 'Escape') c = 0x1B;
+  else if (e.key === 'ArrowLeft')  c = 0x68;  // h
+  else if (e.key === 'ArrowDown')  c = 0x6A;  // j
+  else if (e.key === 'ArrowUp')    c = 0x6B;  // k
+  else if (e.key === 'ArrowRight') c = 0x6C;  // l
   else if (e.ctrlKey && e.key.length === 1) c = e.key.toUpperCase().charCodeAt(0) & 0x1F; // ^C etc
   else if (e.key.length === 1) c = e.key.charCodeAt(0);
   if (c !== null) { e.preventDefault(); inQueue.push(c); }
 });
 
-// ---- bridge the C abstraction (abstraction_emscripten.h EM_JS) expects ----
 globalThis.CPM = {
-  putch: (ch) => putByte(ch & 0xFF),
+  putch: (ch) => writeByte(ch & 0xFF),
   getch: () => (inQueue.length ? inQueue.shift() : -1),
   kbhit: () => (inQueue.length ? 1 : 0),
-  clrscr: () => clearScreen(),
+  clrscr: () => { clear(); home(); dirty = true; },
 };
 
-clearScreen();
-
-// ---- default disk: files preloaded onto drive A user 0 (see web/disk/) ----
+// ============ default disk: files preloaded onto drive A user 0 (see web/disk/) ============
 const DISK = ['README.TXT', 'HELLO.COM', 'GREET.COM', 'ROGUE.COM'];
 
-// ---- boot RunCPM ----
+// ============ boot RunCPM ============
 import('./runcpm.js').then(async ({ default: createRunCPM }) => {
   const Module = await createRunCPM();
   // Drives live under the MEMFS cwd as A/0/... (FILEBASE "./").

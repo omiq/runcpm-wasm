@@ -67,9 +67,9 @@ cd web && python3 -m http.server 8799
 
 ## What's in web/
 
-`index.html` is a minimal glass-teletype: a fixed 80 by 25 grid that interprets the CP/M console byte stream (line feed, carriage return, backspace, form feed, printable bytes). It is enough for line-oriented programs, the command processor, DIR, BASIC and so on. It does not interpret cursor-positioning escape sequences, so full-screen apps will not lay out correctly in it.
+`index.html` is the main page: an 80 by 24 terminal with a small VT100 layer (cursor addressing, erase-to-end-of-line and erase-display, relative cursor moves, and it swallows the colour and DEC-private sequences it does not need). That is enough for both line-oriented programs (the command processor, DIR, BASIC) and full-screen curses programs. It has a blinking block cursor and sizes to the full grid so nothing is clipped when the screen scrolls. It boots to the prompt with the default disk loaded, so `DIR` shows something straight away.
 
-`rogue.html` is the same idea with a small VT100 terminal bolted on: cursor addressing, erase-to-end-of-line and erase-display, relative cursor moves, and it swallows the colour and DEC-private sequences it does not need. That is enough to make a full-screen curses program readable. It preloads `ROGUE.COM` into drive A and boots to the prompt so you type `ROGUE` yourself.
+`rogue.html` is the same terminal wired to auto-run: it preloads `ROGUE.COM` and launches it for you, a one-click way to see a full-screen game working.
 
 Both pages preload a small default disk from `web/disk/` onto drive A user 0, so `DIR` shows something the moment it boots:
 
