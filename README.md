@@ -98,7 +98,7 @@ The sources for the two demos, and a script that rebuilds them, are in `cpm-prog
 
 For a fuller setup, `index.html` will also read an optional `web/disk/manifest.json` describing several drives (`{ "drives": { "A": [...], "B": [...], "C": [...] } }`) and preload each from `web/disk/<DRIVE>/`. With no manifest present (as in this repo) it just loads the small default disk above onto drive A. When the manifest lists a lot of files the fetches run in parallel so boot stays fast.
 
-To run your own program, copy `rogue.html`, write your `.COM` into `/A/0` with `Module.FS.writeFile` before calling `Module.callMain`.
+To run your own program, copy `rogue.html`: write your `.COM` into `/A/0` with `Module.FS.writeFile`, then write a one-line `AUTOEXEC.TXT` naming it to the MEMFS root (`Module.FS.writeFile('/AUTOEXEC.TXT', ...)`), both before calling `Module.callMain`. The build sets `BOOTONLY=TRUE`, so that command runs once at cold boot. Drop the `AUTOEXEC.TXT` line to boot to the `A0>` prompt instead.
 
 ## About the Rogue binary
 

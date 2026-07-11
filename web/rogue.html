@@ -126,10 +126,16 @@ import('./runcpm.js').then(async ({ default: createRunCPM }) => {
   try { Module.FS.mkdir('/A/0'); } catch(e){}
   const com = new Uint8Array(await (await fetch('disk/ROGUE.COM')).arrayBuffer());
   Module.FS.writeFile('/A/0/ROGUE.COM', com);
-  // NB: no AUTOEXEC. Boot to the A0> prompt so you type ROGUE by hand. The
-  // human-timed CCP wait varies the machine state at launch (Z80 R register /
-  // free-running counters), which Rogue seeds its RNG from -> fresh dungeon
-  // each run. Auto-start launched at a fixed instruction count = same dungeon.
+  // Auto-run: drop an AUTOEXEC.TXT at the MEMFS root (beside the A/ drive), one
+  // command line. RunCPM is built with BOOTONLY=TRUE, so it runs once at cold
+  // boot. THIS is the pattern to copy for your own program: write your .COM to
+  // /A/0 above, then put its name here.
+  Module.FS.writeFile('/AUTOEXEC.TXT', new TextEncoder().encode('ROGUE\r\n'));
+  // NB (Rogue-specific quirk): auto-starting at a fixed instruction count makes
+  // Rogue seed its RNG from identical machine state -> the SAME dungeon every
+  // run. Delete the AUTOEXEC.TXT line above to boot to the A0> prompt and type
+  // ROGUE by hand; human timing varies the Z80 R register it seeds from, giving
+  // a fresh dungeon each time.
   termEl.focus();
   Module.callMain([]);
 }).catch(e => { termEl.textContent = 'boot error: ' + e; console.error(e); });
