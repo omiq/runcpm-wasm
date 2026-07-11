@@ -71,7 +71,16 @@ cd web && python3 -m http.server 8799
 
 `rogue.html` is the same idea with a small VT100 terminal bolted on: cursor addressing, erase-to-end-of-line and erase-display, relative cursor moves, and it swallows the colour and DEC-private sequences it does not need. That is enough to make a full-screen curses program readable. It preloads `ROGUE.COM` into drive A and boots to the prompt so you type `ROGUE` yourself.
 
-To run your own program, `rogue.html` is the pattern to copy: write your `.COM` into `/A/0` with `Module.FS.writeFile` before calling `Module.callMain`.
+Both pages preload a small default disk from `web/disk/` onto drive A user 0, so `DIR` shows something the moment it boots:
+
+- `README.TXT` a short guide, shown with `TYPE README.TXT`.
+- `HELLO.COM` hello world in C, compiled with z88dk's `+cpm` target.
+- `GREET.COM` the same thing in Z80 assembly, about sixty bytes.
+- `ROGUE.COM` the Rogue port described below.
+
+The sources for the two demos, and a script that rebuilds them, are in `cpm-programs/demos`. I have deliberately not bundled the classic Digital Research utilities (PIP, STAT, ED and so on); they are still under copyright, so add your own copy if you want them.
+
+To run your own program, copy the pattern in `rogue.html`: write your `.COM` into `/A/0` with `Module.FS.writeFile` before calling `Module.callMain`.
 
 ## About the Rogue binary
 

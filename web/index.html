@@ -77,12 +77,19 @@ globalThis.CPM = {
 
 clearScreen();
 
+// ---- default disk: files preloaded onto drive A user 0 (see web/disk/) ----
+const DISK = ['README.TXT', 'HELLO.COM', 'GREET.COM', 'ROGUE.COM'];
+
 // ---- boot RunCPM ----
 import('./runcpm.js').then(async ({ default: createRunCPM }) => {
   const Module = await createRunCPM();
   // Drives live under the MEMFS cwd as A/0/... (FILEBASE "./").
   try { Module.FS.mkdir('/A'); } catch (e) {}
   try { Module.FS.mkdir('/A/0'); } catch (e) {}
+  for (const name of DISK) {
+    const buf = new Uint8Array(await (await fetch('disk/' + name)).arrayBuffer());
+    Module.FS.writeFile('/A/0/' + name, buf);
+  }
   termEl.focus();
   Module.callMain([]);   // runs the CP/M CCP loop; _getch yields via ASYNCIFY
 }).catch(e => { termEl.textContent = 'boot error: ' + e; console.error(e); });

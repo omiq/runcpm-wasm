@@ -1,3 +1,6 @@
 .DS_Store
 *.o
 web/*.map
+cpm-programs/demos/hello
+cpm-programs/demos/zcc_opt.def
+cpm-programs/demos/*.o

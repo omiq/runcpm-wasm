@@ -1,0 +1,6 @@
+# CP/M program binaries and build output: never touch bytes or line endings
+*.COM   binary
+*.com   binary
+*.wasm  binary
+# CP/M text files keep their original CRLF line endings
+*.TXT   -text

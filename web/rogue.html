@@ -124,7 +124,7 @@ import('./runcpm.js').then(async ({ default: createRunCPM }) => {
   const Module = await createRunCPM();
   try { Module.FS.mkdir('/A'); } catch(e){}
   try { Module.FS.mkdir('/A/0'); } catch(e){}
-  const com = new Uint8Array(await (await fetch('ROGUE.COM')).arrayBuffer());
+  const com = new Uint8Array(await (await fetch('disk/ROGUE.COM')).arrayBuffer());
   Module.FS.writeFile('/A/0/ROGUE.COM', com);
   // NB: no AUTOEXEC. Boot to the A0> prompt so you type ROGUE by hand. The
   // human-timed CCP wait varies the machine state at launch (Z80 R register /
