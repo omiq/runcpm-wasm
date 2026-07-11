@@ -135,16 +135,22 @@ async function loadDisk(FS) {
   } catch (e) { /* no manifest: use the built-in disk */ }
 
   if (manifest && manifest.drives) {
+    // Fetch every file across all drives in parallel; a serial await-loop over
+    // 100+ files makes boot take many seconds (each fetch is a round-trip).
+    const jobs = [];
     for (const [drive, files] of Object.entries(manifest.drives)) {
       try { FS.mkdir('/' + drive); } catch (e) {}
       try { FS.mkdir('/' + drive + '/0'); } catch (e) {}
       for (const name of files) {
-        try {
-          const buf = new Uint8Array(await (await fetch('disk/' + drive + '/' + name)).arrayBuffer());
-          FS.writeFile('/' + drive + '/0/' + name, buf);
-        } catch (e) { /* skip a missing file, keep booting */ }
+        jobs.push((async () => {
+          try {
+            const buf = new Uint8Array(await (await fetch('disk/' + drive + '/' + name)).arrayBuffer());
+            FS.writeFile('/' + drive + '/0/' + name, buf);
+          } catch (e) { /* skip a missing file, keep booting */ }
+        })());
       }
     }
+    await Promise.all(jobs);
   } else {
     try { FS.mkdir('/A'); } catch (e) {}
     try { FS.mkdir('/A/0'); } catch (e) {}
