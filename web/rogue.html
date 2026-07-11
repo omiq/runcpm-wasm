@@ -131,11 +131,10 @@ import('./runcpm.js').then(async ({ default: createRunCPM }) => {
   // boot. THIS is the pattern to copy for your own program: write your .COM to
   // /A/0 above, then put its name here.
   Module.FS.writeFile('/AUTOEXEC.TXT', new TextEncoder().encode('ROGUE\r\n'));
-  // NB (Rogue-specific quirk): auto-starting at a fixed instruction count makes
-  // Rogue seed its RNG from identical machine state -> the SAME dungeon every
-  // run. Delete the AUTOEXEC.TXT line above to boot to the A0> prompt and type
-  // ROGUE by hand; human timing varies the Z80 R register it seeds from, giving
-  // a fresh dungeon each time.
+  // NB: Rogue seeds its RNG from the Z80 R (refresh) register. Our RunCPM build
+  // randomises R at each program launch, so you get a different dungeon every
+  // run. Without that R is deterministic here (the boot path is fixed and the
+  // keyboard wait runs no Z80 instructions), so every game would be identical.
   termEl.focus();
   Module.callMain([]);
 }).catch(e => { termEl.textContent = 'boot error: ' + e; console.error(e); });

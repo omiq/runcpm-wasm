@@ -1,8 +1,25 @@
 diff --git a/RunCPM/cpu1.h b/RunCPM/cpu1.h
-index 0a9e3a5..5d0f802 100644
+index 0a9e3a5..0dbaab2 100644
 --- a/RunCPM/cpu1.h
 +++ b/RunCPM/cpu1.h
-@@ -1062,6 +1062,19 @@ static inline void Z80run(uint32 cpu_delay) {
+@@ -1032,7 +1032,16 @@ x == (C - 1) & 0xff for IND
+ static inline void Z80reset(void) {
+ 	PC = 0;
+ 	IFF = 0;
++#ifdef __EMSCRIPTEN__
++	// Seed the refresh register R with browser entropy. Guests that seed their
++	// RNG from R (e.g. this CP/M Rogue port) would otherwise be identical every
++	// launch: RunCPM's boot path is deterministic and the keyboard wait parks in
++	// C (no Z80 instructions run, so R never advances while waiting). A random R
++	// per launch gives a fresh dungeon each run.
++	IR = (uint8)(emscripten_random() * 256.0);
++#else
+ 	IR = 0;
++#endif
+ 	Status = STATUS_RUNNING;
+ 	Debug = 0;
+ 	Step = -1;
+@@ -1062,6 +1071,19 @@ static inline void Z80run(uint32 cpu_delay) {
  	/* main instruction fetch/decode loop */
  	while (!Status) {	/* loop until Status != 0 */
  
