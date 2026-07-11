@@ -6,4 +6,4 @@
         ld      c,9             ; BDOS function 9 = print string
         call    0005h           ; BDOS entry
         ret                     ; back to the CCP
-msg:    db      'RunCPM in a browser tab. Clean-room CCP, no DR code.',13,10,'$'
+msg:    db      'RunCPM in a browser!',13,10,'$'

@@ -1,22 +1,35 @@
-# runcpm-wasm
+# About RunCPM-WASM
 
-CP/M 2.2 running in a browser tab, compiled from [RunCPM](https://github.com/MockbaTheBorg/RunCPM) to WebAssembly. No DOSBox, no nested emulators, no disk images to fiddle with. It boots to an `A0>` prompt in well under a second and you type at it like a real machine.
+CP/M 2.2 running in a browser tab, converted from the original [RunCPM](https://github.com/MockbaTheBorg/RunCPM) to WebAssembly. 
 
-There is a playable copy of Rogue in here too (see below), which is the demo I keep coming back to. If a roguelike works then the interesting parts all work: the Z80 core, the console, and the awkward blocking-input problem that stops most "CP/M in a browser" attempts dead.
+It boots to an `A0>` prompt from which you can operate it like a real CP/M machine but in your web browser.
 
-## Why this and not DOSBox
+There is a playable copy of Rogue in here too (see below), which is the demo I keep coming back to because if a roguelike works then the crucial parts are confirmed to be working
 
-The usual way to get CP/M in a browser is to run a wasm build of DOSBox and then run a DOS program inside it that itself emulates CP/M. That is three layers deep, it is big, and feeding your own programs in is a chore.
+* Z80
+* vt100 console
+* disks/files
+* bios etc
 
-RunCPM takes a different route. It is a single portable C program that emulates the Z80 (or 8080) directly and reimplements the CP/M BDOS and BIOS in C rather than running Digital Research's original binaries. It ships its own command processor in `ccp.h`. Compile that to wasm and you get CP/M in one flat binary at close to native speed, with no DOS underneath.
+## How it works and why not my old DOSBox approach?
 
-Loading programs is easy because RunCPM uses host files as CP/M disks. A drive is just a folder. Drive A user 0 is the directory `A/0`, and `A/0/PROG.COM` is a file you can drop in. In the browser that folder lives in Emscripten's in-memory filesystem, so the harness just writes your `.COM` there before boot.
+My last attempt at CP/M in a browser ran a wasm build of DOSBox and then in turn launched a DOS CP/M emulation program inside it. 
+
+It worked but at three layers deep, it is big and messy, and feeding your own programs into it and run them is a chore.
+
+RunCPM is a single portable C program that emulates the Z80 (or 8080) directly and reimplements the CP/M BDOS and BIOS in C rather than running Digital Research's original binaries. It ships its own command processor in `ccp.h`. Compile that to wasm and you get CP/M in one package with nothing else required.
+
+Loading programs is easier because RunCPM uses presents the host's files as CP/M disks. A drive is just a named folder. Drive A user 0 is the directory `A/0`, and `A/0/PROG.COM` is a file you can drop right in. 
+
+For the browser version, that folder lives in Emscripten's virtual filesystem which is accessible from JS, so we just put your `.COM` there before mounting.
 
 ## The blocking-input problem
 
-This is the part that took the thinking. CP/M console input blocks. Down inside the BDOS, reading a key calls `_getch()`, which sits and waits until a key arrives. You cannot do that on a browser's main thread. Block it and the event loop stops, which means the very keypress you are waiting for can never be delivered, and the tab freezes.
+A CP/M console input blocks inside the BDOS, reading a key calls `_getch()`, which waits until a key is pressed. 
 
-The fix is Emscripten's ASYNCIFY. It rewrites the compiled code so a blocking call can suspend the whole C call stack, hand control back to the browser, and resume later exactly where it left off. In `_getch` it looks like this:
+You cant do that in a browser's main thread. The event loop stops, which means the keypress you're waiting for can never arrive, and the browser freezes.
+
+The fix is to use Emscripten's `ASYNCIFY`. It rewrites the code so a blocking call can hand control back to the browser, and resume later exactly where it left off. In `_getch` it looks like this:
 
 ```c
 uint8 _getch(void) {
@@ -28,17 +41,17 @@ uint8 _getch(void) {
 }
 ```
 
-`emscripten_sleep` is the yield point. While it sleeps the browser runs, your keydown handler pushes a byte into a JS queue, and on resume `cpm_js_getch()` hands it back. As far as the C code is concerned it just blocked and got a key, which is exactly what CP/M expects.
+`emscripten_sleep` is the yield, while it sleeps the browser runs as usual, your key down handler pushes a byte into a JS queue, and on resume `cpm_js_getch()` returns it back. As far as the C code is concerned it just blocked and then got a key, which is exactly what CP/M looks for.
 
-There is a second, related trap. A program that spins polling `_kbhit()` without ever calling `_getch` (real-time-ish games do this), or one that runs a long stretch with no console call at all (generating a level, say), never gives the event loop a turn either. So there is a small unconditional yield in the CPU loop every so many instructions as a backstop. That yield, and a couple of other browser-only tweaks, live in `src/emscripten.patch` (described below).
+There is a second, related problem in that a program that spins polling `_kbhit()` without ever calling `_getch` (games do this), or one that runs a long time with no console call at all (generating a level, say), never gives the event loop a turn either. So there is a small unconditional yield in the CPU loop every N instructions as a plan B. That yield, and a couple of other browser-only tweaks, are in `src/emscripten.patch` (described below).
 
 ## How the port is put together
 
 RunCPM is written so that only one file changes per platform: an `abstraction_*.h` that provides file access and console I/O. There is a POSIX one, a Windows one, an Arduino one. This adds an Emscripten one.
 
-I started from the POSIX abstraction because Emscripten's libc is POSIX-shaped: its in-memory filesystem answers `fopen`, `opendir`, `glob` and friends, so the whole file half compiled unchanged. Only the console half needed replacing, because POSIX consoles use termios raw mode and `poll(stdin)`, none of which mean anything in a browser.
+I started from the POSIX abstraction because Emscripten's libc is POSIX-ish: its in-memory filesystem answers `fopen`, `opendir`, `glob` and friends, so the whole file half compiled unchanged. Only the console half needed replacing, because POSIX consoles use termios raw mode and `poll(stdin)`, none of which mean anything to a web browser.
 
-The console half now calls four small bridge functions written in JavaScript through Emscripten's `EM_JS`:
+The console half now calls four small functions written in JavaScript through Emscripten's `EM_JS`:
 
 ```c
 EM_JS(void, cpm_js_putch,  (int ch), { globalThis.CPM.putch(ch); });
@@ -47,29 +60,29 @@ EM_JS(int,  cpm_js_kbhit,  (void),   { return globalThis.CPM.kbhit(); });
 EM_JS(void, cpm_js_clrscr, (void),   { globalThis.CPM.clrscr(); });
 ```
 
-The page provides `globalThis.CPM` with those four methods and owns the terminal. That is the whole contract between the C and the browser.
+The page provides `globalThis.CPM` with those four methods and runs the terminal. That is the plumbing between our C code and the browser.
 
-So the port is three things: the abstraction file (`src/abstraction_emscripten.h`), a small patch to upstream `main.c` and `cpu1.h` (`src/emscripten.patch`), and a build script. The patch is all `#ifdef __EMSCRIPTEN__`: it selects the abstraction, adds the CPU-loop yield described above, skips RunCPM's boot-time speed benchmark (a ~290M-instruction timing loop that is instant natively but crawls under the browser yield), and prints the version banner only on the first boot rather than on every warm boot (compiled programs warm-boot when they exit, so otherwise the banner reprints after every run). Nothing else in RunCPM is touched, which is exactly what its design is meant to allow.
+So the port is three things: the abstraction file (`src/abstraction_emscripten.h`), a small patch to upstream `main.c` and `cpu1.h` (`src/emscripten.patch`), and a build script. The patch is all `#ifdef __EMSCRIPTEN__` so it selects the abstraction, adds the CPU-loop yield described above, skips RunCPM's boot-time speed benchmark (a ~290M-instruction loop that makes the browser look frozen), and prints the version message and stuff. Nothing else in RunCPM is changed.
 
-## Build it yourself
+## Run it or build it yourself
 
 You need the Emscripten SDK (emsdk) installed. The build looks for it at `~/emsdk` by default; set `EMSDK` if yours lives elsewhere.
 
 ```bash
 git clone --recursive https://github.com/omiq/runcpm-wasm.git
 cd runcpm-wasm
-./build.sh                       # copies the abstraction in, applies the patch, runs emcc
+./build.sh  # copies the abstraction in, applies the patch, runs emcc
 cd web && python3 -m http.server 8799
 # open http://localhost:8799/index.html, click the screen, type DIR
 ```
 
-`build.sh` is safe to re-run; it notices when the patch is already applied. The build output (`web/runcpm.js` and `web/runcpm.wasm`, about 205 KB together) is committed, so if you only want to run it you can skip emsdk entirely and go straight to the http.server step.
+`build.sh` is safe to re-run. Build output (`web/runcpm.js` and `web/runcpm.wasm`, about 205 KB together) is available, so if you only want to run it you can skip emsdk entirely and go straight to the http.server step.
 
 ## What's in web/
 
-`index.html` is the main page: an 80 by 24 terminal with a small VT100 layer (cursor addressing, erase-to-end-of-line and erase-display, relative cursor moves, and it swallows the colour and DEC-private sequences it does not need). That is enough for both line-oriented programs (the command processor, DIR, BASIC) and full-screen curses programs. It has a blinking block cursor and sizes to the full grid so nothing is clipped when the screen scrolls. It boots to the prompt with the default disk loaded, so `DIR` shows something straight away.
+`index.html` is the main page: an 80 by 24 terminal with a small VT100 compatibility layer such as cursor addressing, erase-to-end-of-line and erase-display, relative cursor moves, (it ignores the colour and DEC-private sequences it does not understand). That is enough for most line-oriented programs (the command processor, DIR, BASIC) and full-screen curses programs. It has a blinking block cursorand nothing is clipped when the screen scrolls. It boots to the prompt with the default disk loaded, so `DIR` shows something straight away.
 
-`rogue.html` is the same terminal wired to auto-run: it preloads `ROGUE.COM` and launches it for you, a one-click way to see a full-screen game working.
+`rogue.html` is the same terminal wired to auto-run: it just preloads `ROGUE.COM` and launches it for you.
 
 Both pages preload a small default disk from `web/disk/` onto drive A user 0, so `DIR` shows something the moment it boots:
 
@@ -78,31 +91,31 @@ Both pages preload a small default disk from `web/disk/` onto drive A user 0, so
 - `GREET.COM` the same thing in Z80 assembly, about sixty bytes.
 - `ROGUE.COM` the Rogue port described below.
 
-The sources for the two demos, and a script that rebuilds them, are in `cpm-programs/demos`. I have deliberately not bundled the classic Digital Research utilities (PIP, STAT, ED and so on); they are still under copyright, so add your own copy if you want them.
+The sources for the two demos, and a script that rebuilds them, are in `cpm-programs/demos`. I have deliberately not bundled the classic Digital Research utilities (PIP, STAT, ED and so on) because copyright, so add your own copy if you want them.
 
 For a fuller setup, `index.html` will also read an optional `web/disk/manifest.json` describing several drives (`{ "drives": { "A": [...], "B": [...], "C": [...] } }`) and preload each from `web/disk/<DRIVE>/`. With no manifest present (as in this repo) it just loads the small default disk above onto drive A. When the manifest lists a lot of files the fetches run in parallel so boot stays fast.
 
-To run your own program, copy the pattern in `rogue.html`: write your `.COM` into `/A/0` with `Module.FS.writeFile` before calling `Module.callMain`.
+To run your own program, copy `rogue.html`, write your `.COM` into `/A/0` with `Module.FS.writeFile` before calling `Module.callMain`.
 
 ## About the Rogue binary
 
-The `cpm-programs/rogue` folder has the demo program and its docs. The binary identifies itself as `ROGUE - V1.7   DPG 1985` and was built for a Televideo TS803 terminal, so it is a 1985 CP/M port of Rogue with the porter's initials in the version string. `rogue.sub` is the original CP/M SUBMIT script that patches the base `rogue.com` (through `DDT` and a hex patch) into the VT100 build `rogue-vt.com`, which is the one the web harness uses. I have left that recipe in because the history is half the fun.
+The `cpm-programs/rogue` folder has the demo program and its docs. The binary identifies itself as `ROGUE - V1.7   DPG 1985` and was built for a Televideo TS803 terminal, so it is a 1985 CP/M port of Rogue with the porter's initials in the version string. `rogue.sub` is the original CP/M SUBMIT script that patches the base `rogue.com` (through `DDT` and a hex patch) into the VT100 build `rogue-vt.com`, which is the one the web load uses. I have left that in because the history is half the fun.
 
 Rogue itself was written by Michael Toy, Ken Arnold and Glenn Wichman. This CP/M port is included as a period demonstration. If you hold the rights to it and would rather it were not here, open an issue and I will take it down.
 
 ## Status
 
-The core is solid and running live at [cpm.retrogamecoders.com](https://cpm.retrogamecoders.com). What works: the CPU, the reimplemented BDOS and BIOS, the internal command processor, the two-way VT100 console, the ASYNCIFY input trick, the in-memory disk (including several drives), and real 1980s CP/M software (Microsoft BASIC, WordStar, the Hi-Tech C compiler, Turbo Pascal, Rogue).
+The core is up and running live at [cpm.retrogamecoders.com](https://cpm.retrogamecoders.com). What works: the CPU, the reimplemented BDOS and BIOS, the internal command processor, the two-way VT100 console, the ASYNCIFY input trick, the in-memory disk (including several drives), and real 1980s CP/M software (Microsoft BASIC, WordStar, the Hi-Tech C compiler, Turbo Pascal, Rogue).
 
-The compile-your-own-`.COM` loop is closed too: the [Retro Game Coders IDE](https://ide.retrogamecoders.com/?platform=cpm) has a CP/M platform that compiles your C with z88dk's `+cpm` target server-side and runs the result in this emulator.
+The compile-your-own-`.COM` loop is up too: the [Retro Game Coders IDE](https://ide.retrogamecoders.com/?platform=cpm) has a CP/M platform that compiles your C and runs the result in the emulator.
 
-Rough edges and things I would still like to do:
+## Rough edges and things I would still like to do:
 
-- The VT100 terminal is deliberately minimal, enough for the CCP and for curses programs like Rogue. Exotic escape sequences are swallowed rather than interpreted; dropping in a full terminal emulator (xterm.js) would be the upgrade.
+- The VT100 terminal is minimal, enough for the CCP and for curses programs like Rogue. Exotic escape sequences are ignored rather than interpreted. Something like dropping in a full terminal emulator (xterm.js) would be an upgrade.
 - `tools/extract-myz80.sh` pulls loose files out of MYZ80 `.DSK` images (the disk format the old DOSBox site used), which is how the bigger multi-drive sets were built. MYZ80 uses a non-standard layout, so it needs the custom cpmtools geometry the script documents.
 
 ## Licence
 
 The port code in this repository (the Emscripten abstraction, the patch, the build script and the web harnesses) is MIT; see `LICENSE`. RunCPM is MIT and stays under its own licence in the submodule (`RunCPM/LICENSE`). Because it is built with `-DCCP_INTERNAL` the compiled binary contains only RunCPM's own code, so no Digital Research CP/M code is distributed.
 
-Credit where it is due: RunCPM is by MockbaTheBorg. This repository only teaches it to run in a browser.
+Credit where it is due: RunCPM is by MockbaTheBorg. This repository only teaches it to run in a browser so I could have CP/M in my online IDE.
