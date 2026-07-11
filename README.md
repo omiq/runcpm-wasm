@@ -30,7 +30,7 @@ uint8 _getch(void) {
 
 `emscripten_sleep` is the yield point. While it sleeps the browser runs, your keydown handler pushes a byte into a JS queue, and on resume `cpm_js_getch()` hands it back. As far as the C code is concerned it just blocked and got a key, which is exactly what CP/M expects.
 
-There is a second, related trap. A program that spins polling `_kbhit()` without ever calling `_getch` (real-time-ish games do this), or one that runs a long stretch with no console call at all (generating a level, say), never gives the event loop a turn either. So there is a small unconditional yield in the CPU loop every so many instructions as a backstop. Both edits live in `src/emscripten.patch`.
+There is a second, related trap. A program that spins polling `_kbhit()` without ever calling `_getch` (real-time-ish games do this), or one that runs a long stretch with no console call at all (generating a level, say), never gives the event loop a turn either. So there is a small unconditional yield in the CPU loop every so many instructions as a backstop. That yield, and a couple of other browser-only tweaks, live in `src/emscripten.patch` (described below).
 
 ## How the port is put together
 
@@ -49,7 +49,7 @@ EM_JS(void, cpm_js_clrscr, (void),   { globalThis.CPM.clrscr(); });
 
 The page provides `globalThis.CPM` with those four methods and owns the terminal. That is the whole contract between the C and the browser.
 
-So the port is three things: the abstraction file (`src/abstraction_emscripten.h`), a two-hunk patch to upstream `main.c` and `cpu1.h` (`src/emscripten.patch`), and a build script. Nothing else in RunCPM is touched, which is exactly what its design is meant to allow.
+So the port is three things: the abstraction file (`src/abstraction_emscripten.h`), a small patch to upstream `main.c` and `cpu1.h` (`src/emscripten.patch`), and a build script. The patch is all `#ifdef __EMSCRIPTEN__`: it selects the abstraction, adds the CPU-loop yield described above, skips RunCPM's boot-time speed benchmark (a ~290M-instruction timing loop that is instant natively but crawls under the browser yield), and prints the version banner only on the first boot rather than on every warm boot (compiled programs warm-boot when they exit, so otherwise the banner reprints after every run). Nothing else in RunCPM is touched, which is exactly what its design is meant to allow.
 
 ## Build it yourself
 
@@ -80,6 +80,8 @@ Both pages preload a small default disk from `web/disk/` onto drive A user 0, so
 
 The sources for the two demos, and a script that rebuilds them, are in `cpm-programs/demos`. I have deliberately not bundled the classic Digital Research utilities (PIP, STAT, ED and so on); they are still under copyright, so add your own copy if you want them.
 
+For a fuller setup, `index.html` will also read an optional `web/disk/manifest.json` describing several drives (`{ "drives": { "A": [...], "B": [...], "C": [...] } }`) and preload each from `web/disk/<DRIVE>/`. With no manifest present (as in this repo) it just loads the small default disk above onto drive A. When the manifest lists a lot of files the fetches run in parallel so boot stays fast.
+
 To run your own program, copy the pattern in `rogue.html`: write your `.COM` into `/A/0` with `Module.FS.writeFile` before calling `Module.callMain`.
 
 ## About the Rogue binary
@@ -90,13 +92,14 @@ Rogue itself was written by Michael Toy, Ken Arnold and Glenn Wichman. This CP/M
 
 ## Status
 
-This is a proven spike, not a finished product. What works: the CPU, the reimplemented BDOS and BIOS, the internal command processor, two-way console, the ASYNCIFY input trick, the in-memory disk, and Rogue playing through to a fresh dungeon each run. That was the risky part, and it holds up.
+The core is solid and running live at [cpm.retrogamecoders.com](https://cpm.retrogamecoders.com). What works: the CPU, the reimplemented BDOS and BIOS, the internal command processor, the two-way VT100 console, the ASYNCIFY input trick, the in-memory disk (including several drives), and real 1980s CP/M software (Microsoft BASIC, WordStar, the Hi-Tech C compiler, Turbo Pascal, Rogue).
+
+The compile-your-own-`.COM` loop is closed too: the [Retro Game Coders IDE](https://ide.retrogamecoders.com/?platform=cpm) has a CP/M platform that compiles your C with z88dk's `+cpm` target server-side and runs the result in this emulator.
 
 Rough edges and things I would still like to do:
 
-- The glass-TTY in `index.html` does not handle cursor positioning. Full-screen apps outside the VT100 harness will need a proper terminal (something like xterm.js, or fuller ADM-3A/VT100 handling).
-- No auto-run yet. Both harnesses boot to the prompt on purpose. For Rogue that is almost a feature: the human-timed wait at the prompt varies the machine state, which the game seeds its RNG from, so you get a different dungeon each run. A fixed auto-start would hand you the same dungeon every time.
-- A path for compiling your own C to a `.COM` (via z88dk's `+cpm` target) and running it here would close the loop.
+- The VT100 terminal is deliberately minimal, enough for the CCP and for curses programs like Rogue. Exotic escape sequences are swallowed rather than interpreted; dropping in a full terminal emulator (xterm.js) would be the upgrade.
+- `tools/extract-myz80.sh` pulls loose files out of MYZ80 `.DSK` images (the disk format the old DOSBox site used), which is how the bigger multi-drive sets were built. MYZ80 uses a non-standard layout, so it needs the custom cpmtools geometry the script documents.
 
 ## Licence
 
