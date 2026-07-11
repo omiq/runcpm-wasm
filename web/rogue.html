@@ -120,8 +120,10 @@ globalThis.CPM = {
 };
 
 // ============ boot: preload ROGUE.COM + auto-run ============
-import('./runcpm.js').then(async ({ default: createRunCPM }) => {
-  const Module = await createRunCPM();
+// Cache-bust js + wasm as a matched pair (see index.html) - bump on rebuild.
+const BUILD = '20260711d';
+import('./runcpm.js?v=' + BUILD).then(async ({ default: createRunCPM }) => {
+  const Module = await createRunCPM({ locateFile: (path, dir) => dir + path + '?v=' + BUILD });
   try { Module.FS.mkdir('/A'); } catch(e){}
   try { Module.FS.mkdir('/A/0'); } catch(e){}
   const com = new Uint8Array(await (await fetch('disk/ROGUE.COM')).arrayBuffer());

@@ -173,8 +173,14 @@ async function loadDisk(FS) {
 }
 
 // ============ boot RunCPM ============
-import('./runcpm.js').then(async ({ default: createRunCPM }) => {
-  const Module = await createRunCPM();
+// Cache-bust the js + wasm as a matched pair. When the wasm's imports change
+// (e.g. adding emscripten_random) a browser holding a cached OLD runcpm.js
+// links it against the NEW wasm and dies with a LinkError. Bump BUILD whenever
+// runcpm.js/.wasm are rebuilt: the version query is a URL the browser has never
+// cached, so it always fetches the fresh, matching pair.
+const BUILD = '20260711d';
+import('./runcpm.js?v=' + BUILD).then(async ({ default: createRunCPM }) => {
+  const Module = await createRunCPM({ locateFile: (path, dir) => dir + path + '?v=' + BUILD });
   // Drives live under the MEMFS cwd as A/0/... (FILEBASE "./").
   await loadDisk(Module.FS);
   termEl.focus();
