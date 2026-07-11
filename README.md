@@ -2,7 +2,7 @@
 
 CP/M 2.2 running in a browser tab, converted from the original [RunCPM](https://github.com/MockbaTheBorg/RunCPM) to WebAssembly. 
 
-<img width="708" height="462" alt="image" src="https://github.com/user-attachments/assets/66cc91c0-92b6-4524-b51e-06bbc3450e5c" />
+<img width="708" height="462" alt="Rogue.COM" src="https://github.com/user-attachments/assets/66cc91c0-92b6-4524-b51e-06bbc3450e5c" />
 
 
 It boots to an `A0>` prompt from which you can operate it like a real CP/M machine but in your web browser.
