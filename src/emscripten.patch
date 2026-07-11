@@ -1,0 +1,39 @@
+diff --git a/RunCPM/cpu1.h b/RunCPM/cpu1.h
+index 0a9e3a5..5d0f802 100644
+--- a/RunCPM/cpu1.h
++++ b/RunCPM/cpu1.h
+@@ -1062,6 +1062,19 @@ static inline void Z80run(uint32 cpu_delay) {
+ 	/* main instruction fetch/decode loop */
+ 	while (!Status) {	/* loop until Status != 0 */
+ 
++#ifdef __EMSCRIPTEN__
++        /* Cooperative time-slicing for the browser. Console I/O yields via
++           ASYNCIFY, but a guest that runs a long stretch with no console call
++           (games generating a level, delay loops) would otherwise never return
++           to the event loop and would freeze the tab. Yield unconditionally
++           every N instructions so paint + keyboard keep working regardless of
++           what the guest does. */
++        {
++            static uint32 em_yield_cnt = 0;
++            if (++em_yield_cnt >= 250000) { em_yield_cnt = 0; emscripten_sleep(0); }
++        }
++#endif
++
+         /* Throttling to CPU_DELAY instructions */
+ 		if (cpu_delay != 0) {
+ 	        if (++instr_cnt >= cpu_delay) {
+diff --git a/RunCPM/main.c b/RunCPM/main.c
+index 6aac003..9fe9df7 100644
+--- a/RunCPM/main.c
++++ b/RunCPM/main.c
+@@ -26,7 +26,9 @@ This should be the only file modified for portability. Any other file
+ should be kept the same.
+ */
+ 
+-    #ifdef _WIN32
++    #ifdef __EMSCRIPTEN__
++        #include "abstraction_emscripten.h"
++    #elif defined(_WIN32)
+         #include "abstraction_windows.h"
+     #else
+         #include "abstraction_posix.h"

@@ -1,0 +1,138 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>RunCPM (wasm) - Rogue on a VT100 terminal</title>
+<style>
+  html, body { margin:0; background:#111; color:#c8c8c8; height:100%;
+               font:14px/1.15 ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  #wrap { display:flex; flex-direction:column; align-items:center; padding:10px; }
+  /* No fixed height / overflow: the grid is always 24 rows, so let the <pre>
+     size to exactly that. A short box was clipping Rogue's bottom rows (status
+     + the "-- More --" prompt), which read as a freeze. */
+  #term { white-space:pre; background:#000; color:#33ff66; padding:10px;
+          width:80ch; line-height:1.15; border:1px solid #333; outline:none; }
+  #hint { color:#777; font-size:12px; margin-top:6px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="term" tabindex="0"></div>
+  <div id="hint">click screen, then play. hjkl / arrows to move. ROGUE-VT (VT100 build).</div>
+</div>
+<script>
+// ============ minimal VT100 terminal ============
+// Enough of the ANSI/VT100 set for CP/M full-screen apps: cursor addressing
+// (CUP), erase display/line (ED/EL), relative cursor moves, and it swallows
+// SGR + DEC-private sequences it doesn't need. Rogue-VT drives exactly these.
+const COLS = 80, ROWS = 24;
+const termEl = document.getElementById('term');
+let grid, curR, curC, dirty = true;
+function clear() { grid = Array.from({length:ROWS}, () => Array(COLS).fill(' ')); }
+function home() { curR = 0; curC = 0; }
+clear(); home();
+
+// escape-sequence state machine
+let st = 'NORMAL', par = '';
+function params(def) {
+  const p = par.split(';').map(x => x === '' ? def : parseInt(x,10));
+  return p.length ? p : [def];
+}
+function clampCur() { if (curR<0) curR=0; if (curR>=ROWS) curR=ROWS-1; if (curC<0) curC=0; if (curC>=COLS) curC=COLS-1; }
+
+function writeByte(ch) {
+  dirty = true;
+  if (st === 'NORMAL') {
+    if (ch === 0x1B) { st = 'ESC'; return; }
+    if (ch === 0x0A) { curR++; if (curR>=ROWS){curR=ROWS-1; grid.shift(); grid.push(Array(COLS).fill(' '));} return; }
+    if (ch === 0x0D) { curC = 0; return; }
+    if (ch === 0x08) { if (curC>0) curC--; return; }
+    if (ch === 0x09) { curC = (curC + 8) & ~7; if (curC>=COLS) curC=COLS-1; return; }
+    if (ch === 0x0C) { clear(); home(); return; }
+    if (ch === 0x07) return;                 // bell
+    if (ch < 32) return;
+    grid[curR][curC] = String.fromCharCode(ch);
+    curC++; if (curC>=COLS){curC=0; curR++; if(curR>=ROWS){curR=ROWS-1; grid.shift(); grid.push(Array(COLS).fill(' '));}}
+    return;
+  }
+  if (st === 'ESC') {
+    if (ch === 0x5B) { st = 'CSI'; par = ''; return; }   // '['
+    // ESC-x singles we can ignore/handle: M (reverse index), = > ( ) etc.
+    if (ch === 0x4D) { if (curR>0) curR--; }             // RI reverse index (approx)
+    st = 'NORMAL'; return;
+  }
+  if (st === 'CSI') {
+    // collect params: digits, ';', and a leading '?' (DEC private) we swallow
+    if ((ch>=0x30 && ch<=0x39) || ch===0x3B || ch===0x3F) { par += String.fromCharCode(ch); return; }
+    const c = String.fromCharCode(ch);
+    const priv = par[0] === '?';
+    switch (c) {
+      case 'H': case 'f': { const p = params(1); curR=(p[0]||1)-1; curC=(p[1]||1)-1; clampCur(); break; }
+      case 'A': curR -= (params(1)[0]||1); clampCur(); break;
+      case 'B': curR += (params(1)[0]||1); clampCur(); break;
+      case 'C': curC += (params(1)[0]||1); clampCur(); break;
+      case 'D': curC -= (params(1)[0]||1); clampCur(); break;
+      case 'J': { const n = params(0)[0];
+        if (n===2){ clear(); }
+        else if (n===0){ for(let x=curC;x<COLS;x++) grid[curR][x]=' '; for(let y=curR+1;y<ROWS;y++) grid[y].fill(' '); }
+        else if (n===1){ for(let y=0;y<curR;y++) grid[y].fill(' '); for(let x=0;x<=curC;x++) grid[curR][x]=' '; }
+        break; }
+      case 'K': { const n = params(0)[0];
+        if (n===0){ for(let x=curC;x<COLS;x++) grid[curR][x]=' '; }
+        else if (n===1){ for(let x=0;x<=curC;x++) grid[curR][x]=' '; }
+        else if (n===2){ grid[curR].fill(' '); }
+        break; }
+      case 'm': break;   // SGR attributes: ignored (rogue playable without standout)
+      case 'h': case 'l': break;   // DEC private set/reset (cursor vis etc): ignored
+      default: break;
+    }
+    st = 'NORMAL'; return;
+  }
+}
+
+function render() {
+  if (!dirty) return; dirty = false;
+  termEl.textContent = grid.map(r => r.join('')).join('\n');
+}
+(function raf(){ render(); requestAnimationFrame(raf); })();
+
+// ============ keyboard -> CP/M input queue ============
+const inQueue = [];
+termEl.addEventListener('keydown', (e) => {
+  let c = null;
+  if (e.key === 'Enter') c = 0x0D;
+  else if (e.key === 'Backspace') c = 0x08;
+  else if (e.key === 'Escape') c = 0x1B;
+  else if (e.key === 'ArrowLeft')  c = 0x68;  // h
+  else if (e.key === 'ArrowDown')  c = 0x6A;  // j
+  else if (e.key === 'ArrowUp')    c = 0x6B;  // k
+  else if (e.key === 'ArrowRight') c = 0x6C;  // l
+  else if (e.ctrlKey && e.key.length===1) c = e.key.toUpperCase().charCodeAt(0) & 0x1F;
+  else if (e.key.length === 1) c = e.key.charCodeAt(0);
+  if (c !== null) { e.preventDefault(); inQueue.push(c); }
+});
+
+globalThis.CPM = {
+  putch: (ch) => writeByte(ch & 0xFF),
+  getch: () => (inQueue.length ? inQueue.shift() : -1),
+  kbhit: () => (inQueue.length ? 1 : 0),
+  clrscr: () => { clear(); home(); dirty = true; },
+};
+
+// ============ boot: preload ROGUE.COM + auto-run ============
+import('./runcpm.js').then(async ({ default: createRunCPM }) => {
+  const Module = await createRunCPM();
+  try { Module.FS.mkdir('/A'); } catch(e){}
+  try { Module.FS.mkdir('/A/0'); } catch(e){}
+  const com = new Uint8Array(await (await fetch('ROGUE.COM')).arrayBuffer());
+  Module.FS.writeFile('/A/0/ROGUE.COM', com);
+  // NB: no AUTOEXEC. Boot to the A0> prompt so you type ROGUE by hand. The
+  // human-timed CCP wait varies the machine state at launch (Z80 R register /
+  // free-running counters), which Rogue seeds its RNG from -> fresh dungeon
+  // each run. Auto-start launched at a fixed instruction count = same dungeon.
+  termEl.focus();
+  Module.callMain([]);
+}).catch(e => { termEl.textContent = 'boot error: ' + e; console.error(e); });
+</script>
+</body>
+</html>
