@@ -10,15 +10,29 @@
 #
 #     seclen 128   sectrk 128   blocksize 4096   boottrk 0   offset 256   maxdir 512
 #
-# 'tracks' only has to cover the image (128*128 = 16384 bytes per track), so it
-# is computed per file. cpmtools resolves "-f <name>" from its compiled-in
-# diskdefs file, so we append a "myz80" definition there once (idempotently).
+# MYZ80 uses 16-bit block pointers on ALL its disks. cpmtools, though, picks
+# 8-bit pointers when a disk has <=255 blocks (small disks: B.DSK, C.DSK), which
+# misreads every block after the first and corrupts multi-block files (MBASIC,
+# the Hi-Tech C compiler). So we force 16-bit by padding the image (with the CP/M
+# empty-sector byte 0xE5) up past 256 blocks and sizing 'tracks' to match. The
+# padding is unused space; files only reference the real low blocks.
 #
 # Usage: ./extract-myz80.sh A.DSK outdir/
 set -euo pipefail
 DSK="${1:?usage: extract-myz80.sh <image.dsk> <outdir>}"
 OUT="${2:?usage: extract-myz80.sh <image.dsk> <outdir>}"
 
+# Pad a working copy to at least 260 blocks * 4096 so cpmtools uses 16-bit pointers.
+WORK="$(mktemp).dsk"
+MIN=$(( 260 * 4096 + 256 ))
+python3 - "$DSK" "$WORK" "$MIN" <<'PY'
+import sys
+src, dst, minsz = sys.argv[1], sys.argv[2], int(sys.argv[3])
+d = bytearray(open(src,'rb').read())
+if len(d) < minsz: d += b'\xe5' * (minsz - len(d))
+open(dst,'wb').write(d)
+PY
+DSK="$WORK"
 SIZE=$(wc -c < "$DSK")
 TRACKS=$(( (SIZE - 256 + 16383) / 16384 ))
 
