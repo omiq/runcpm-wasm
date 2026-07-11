@@ -123,16 +123,43 @@ globalThis.CPM = {
 // ============ default disk: files preloaded onto drive A user 0 (see web/disk/) ============
 const DISK = ['README.TXT', 'HELLO.COM', 'GREET.COM', 'ROGUE.COM'];
 
+// Optionally, disk/manifest.json can define a fuller multi-drive setup:
+//   { "drives": { "A": ["ASM.COM", ...], "B": [...], "C": [...] } }
+// with files served from disk/<DRIVE>/<NAME>. If it is absent (as in this
+// repo) we fall back to the minimal built-in disk above on drive A.
+async function loadDisk(FS) {
+  let manifest = null;
+  try {
+    const r = await fetch('disk/manifest.json');
+    if (r.ok && (r.headers.get('content-type') || '').includes('json')) manifest = await r.json();
+  } catch (e) { /* no manifest: use the built-in disk */ }
+
+  if (manifest && manifest.drives) {
+    for (const [drive, files] of Object.entries(manifest.drives)) {
+      try { FS.mkdir('/' + drive); } catch (e) {}
+      try { FS.mkdir('/' + drive + '/0'); } catch (e) {}
+      for (const name of files) {
+        try {
+          const buf = new Uint8Array(await (await fetch('disk/' + drive + '/' + name)).arrayBuffer());
+          FS.writeFile('/' + drive + '/0/' + name, buf);
+        } catch (e) { /* skip a missing file, keep booting */ }
+      }
+    }
+  } else {
+    try { FS.mkdir('/A'); } catch (e) {}
+    try { FS.mkdir('/A/0'); } catch (e) {}
+    for (const name of DISK) {
+      const buf = new Uint8Array(await (await fetch('disk/' + name)).arrayBuffer());
+      FS.writeFile('/A/0/' + name, buf);
+    }
+  }
+}
+
 // ============ boot RunCPM ============
 import('./runcpm.js').then(async ({ default: createRunCPM }) => {
   const Module = await createRunCPM();
   // Drives live under the MEMFS cwd as A/0/... (FILEBASE "./").
-  try { Module.FS.mkdir('/A'); } catch (e) {}
-  try { Module.FS.mkdir('/A/0'); } catch (e) {}
-  for (const name of DISK) {
-    const buf = new Uint8Array(await (await fetch('disk/' + name)).arrayBuffer());
-    Module.FS.writeFile('/A/0/' + name, buf);
-  }
+  await loadDisk(Module.FS);
   termEl.focus();
   Module.callMain([]);   // runs the CP/M CCP loop; _getch yields via ASYNCIFY
 }).catch(e => { termEl.textContent = 'boot error: ' + e; console.error(e); });
