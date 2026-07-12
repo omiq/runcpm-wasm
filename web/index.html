@@ -81,7 +81,8 @@ globalThis.CPM = {
 };
 
 // ============ default disk: files preloaded onto drive A user 0 (see web/disk/) ============
-const DISK = ['README.TXT', 'HELLO.COM', 'GREET.COM', 'ROGUE.COM', 'WELCOME.COM', 'COLOR.COM'];
+const DISK = ['README.TXT', 'HELLO.COM', 'GREET.COM', 'ROGUE.COM', 'WELCOME.COM',
+              'COLORS.COM', 'DASH.COM', 'MENU.COM'];
 // AUTOEXEC.TXT is not a drive file: RunCPM looks for it in the MEMFS working
 // directory (FILEBASE "./"), alongside the A/, B/... drive folders, and runs
 // its single command line on cold boot. See loadDisk().

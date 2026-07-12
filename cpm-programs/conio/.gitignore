@@ -1,0 +1,7 @@
+# regenerable build outputs (rebuild with build.sh); shipped copies live in web/disk/
+colors
+dash
+menu
+*.COM
+*.map
+*.def
