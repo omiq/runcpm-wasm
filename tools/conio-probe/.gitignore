@@ -1,0 +1,10 @@
+# regenerable build outputs (rebuild with run-probe.sh / zcc)
+probe
+probe2
+color
+probe_z80pack
+*.COM
+*.com
+*.dsk
+*.map
+*.def
