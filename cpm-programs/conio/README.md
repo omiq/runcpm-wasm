@@ -5,7 +5,7 @@ sequences, so a single `.COM` renders identically on:
 
 - the RunCPM browser terminal (xterm.js) at cpm.retrogamecoders.com
 - a real RC2014 (or any CP/M box) driving a VT100/ANSI terminal over serial
-- the 8bitworkshop `cpm` IDE platform
+- the [online IDE](https://ide.retrogamecoders.com/) CP/M platform
 
 ## Why not just use `<conio.h>`?
 
