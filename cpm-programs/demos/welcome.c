@@ -11,7 +11,7 @@ int main(void) {
     printf("\x1b[2J\x1b[H");
     
     
-    printf("STARTING CP/M ...\r\n\r\n");
+    printf("STARTING CP/M 2.2 ...\r\n\r\n");
 
     printf( "   ____ ____   ____  __ \r\n");
     printf( "  / ___|  _ \\ / /  \\/  |\r\n");
