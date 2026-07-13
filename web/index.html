@@ -98,12 +98,30 @@ let outBuf = [];
 
 // ============ keyboard -> CP/M input queue ============
 // xterm.onData already yields terminal bytes (Enter=\r, Ctrl-C=0x03, etc). Two
-// fixups for CP/M: arrows -> hjkl (Rogue), and DEL(0x7f) -> BS(0x08) since CP/M
-// expects backspace as 0x08.
+// fixups for CP/M: the arrow keys, and DEL(0x7f) -> BS(0x08) since CP/M expects
+// backspace as 0x08.
+//
+// --- arrow-key remapping profiles ---
+// CP/M programs never agreed on cursor keys, so we translate the terminal's
+// VT100 arrow escapes into whatever bytes the running program expects. Pick a
+// profile below, or override per visit with ?keys=NAME in the URL.
+//   wordstar - the WordStar "diamond" (^E/^X/^S/^D). Right for ZDE, WordStar,
+//              TE, VDE, the Turbo Pascal editor - most CP/M full-screen tools.
+//   rogue    - hjkl, for the Rogue dungeon crawler.
+//   off      - no remap: pass the raw VT100 escape straight through.
+// Each value maps a VT100 escape (up/down/right/left) to the byte(s) to inject.
+const KEYMAPS = {
+  wordstar: { '\x1b[A': 0x05, '\x1b[B': 0x18, '\x1b[C': 0x04, '\x1b[D': 0x13 }, // ^E ^X ^D ^S
+  rogue:    { '\x1b[A': 0x6B, '\x1b[B': 0x6A, '\x1b[C': 0x6C, '\x1b[D': 0x68 }, // k  j  l  h
+  off:      null,
+};
+const DEFAULT_KEYS = 'wordstar';   // rogue.html ships 'rogue'
+const wantKeys = new URLSearchParams(location.search).get('keys');
+const ARROW = (wantKeys && wantKeys in KEYMAPS) ? KEYMAPS[wantKeys] : KEYMAPS[DEFAULT_KEYS];
+
 const inQueue = [];
-const ARROW = { '\x1b[A': 0x6B, '\x1b[B': 0x6A, '\x1b[C': 0x6C, '\x1b[D': 0x68 }; // k j l h
 term.onData((data) => {
-  if (ARROW[data] !== undefined) { inQueue.push(ARROW[data]); return; }
+  if (ARROW && ARROW[data] !== undefined) { inQueue.push(ARROW[data]); return; }
   for (let i = 0; i < data.length; i++) {
     let c = data.charCodeAt(i) & 0xFF;
     if (c === 0x7f) c = 0x08;   // DEL -> BS
