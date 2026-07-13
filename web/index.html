@@ -14,12 +14,52 @@
   #term .xterm-viewport { overflow:hidden !important; }
   #term .xterm-viewport::-webkit-scrollbar { display:none; }
   #hint { color:#777; font-size:12px; margin-top:6px; }
+
+  /* ---- disk manager: green CRT chrome to echo the drive-icon look ---- */
+  #disk { width:820px; max-width:100%; margin-top:14px; }
+  #drives { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
+  .drive { display:flex; align-items:center; gap:8px; padding:8px 12px; cursor:pointer;
+           background:#001400; border:1px solid #1f5f2f; border-radius:6px;
+           color:#33ff66; font-size:13px; user-select:none; }
+  .drive:hover { border-color:#33ff66; }
+  .drive.sel { border-color:#33ff66; box-shadow:0 0 0 1px #33ff66 inset; background:#002800; }
+  .drive .ic { font-size:15px; }
+  .drive .lbl { color:#66ffaa; }
+  .drive .tag { color:#3a7a4a; font-size:11px; }
+  #files { margin-top:10px; border:1px solid #1f5f2f; border-radius:6px; background:#000a00;
+           min-height:60px; padding:8px 10px; }
+  #files.drag { border-color:#33ff66; border-style:dashed; background:#002800; }
+  #files .drophint { color:#3a7a4a; font-size:11px; text-align:center; margin-top:6px; }
+  #warn { margin-top:8px; padding:6px 10px; border-radius:6px; text-align:center; font-size:12px;
+          color:#ffd27f; background:#2a1e00; border:1px solid #6a5100; display:none; }
+  #files .row { display:flex; align-items:center; gap:10px; padding:3px 0; color:#33ff66; }
+  #files .row .fn { flex:1; }
+  #files .row .sz { color:#3a7a4a; font-size:11px; width:70px; text-align:right; }
+  #files a.dl { color:#88ff99; text-decoration:none; border:1px solid #1f5f2f; border-radius:4px;
+                padding:0 8px; font-size:12px; }
+  #files a.dl:hover { border-color:#33ff66; }
+  #files .empty { color:#3a7a4a; font-style:italic; }
+  #upbar { margin-top:8px; display:flex; align-items:center; gap:10px; }
+  #upbtn { cursor:pointer; background:#002800; border:1px solid #1f5f2f; border-radius:6px;
+           color:#66ffaa; padding:6px 14px; font-size:13px; }
+  #upbtn:hover { border-color:#33ff66; }
+  #upnote { color:#777; font-size:11px; }
 </style>
 </head>
 <body>
 <div id="wrap">
   <div id="term"></div>
   <div id="hint">click the screen, then type. Try DIR, or TYPE README.TXT, or ROGUE.</div>
+  <div id="disk">
+    <div id="drives"></div>
+    <div id="files"></div>
+    <div id="warn"></div>
+    <div id="upbar">
+      <button id="upbtn" type="button">Upload to <span id="updrive">A</span>:</button>
+      <input id="upinput" type="file" multiple hidden>
+      <span id="upnote">files land in the selected drive. names forced to CP/M 8.3. RAM only, gone on refresh.</span>
+    </div>
+  </div>
 </div>
 <script src="vendor/xterm.js"></script>
 <script>
@@ -92,6 +132,7 @@ const DISK = ['README.TXT', 'HELLO.COM', 'GREET.COM', 'ROGUE.COM', 'WELCOME.COM'
 // with files served from disk/<DRIVE>/<NAME>. If it is absent (as in this
 // repo) we fall back to the minimal built-in disk above on drive A.
 async function loadDisk(FS) {
+  const drives = [];   // drive letters that got created, for the disk-manager UI
   let manifest = null;
   try {
     const r = await fetch('disk/manifest.json');
@@ -105,6 +146,7 @@ async function loadDisk(FS) {
     for (const [drive, files] of Object.entries(manifest.drives)) {
       try { FS.mkdir('/' + drive); } catch (e) {}
       try { FS.mkdir('/' + drive + '/0'); } catch (e) {}
+      drives.push(drive);
       for (const name of files) {
         jobs.push((async () => {
           try {
@@ -118,12 +160,12 @@ async function loadDisk(FS) {
   } else {
     try { FS.mkdir('/A'); } catch (e) {}
     try { FS.mkdir('/A/0'); } catch (e) {}
+    drives.push('A');
     for (const name of DISK) {
       const buf = new Uint8Array(await (await fetch('disk/' + name)).arrayBuffer());
       FS.writeFile('/A/0/' + name, buf);
     }
   }
-
   // AUTOEXEC.TXT lives at the MEMFS root (FILEBASE "./"), not inside a drive:
   // that's where RunCPM's cold-boot autoexec check (_sys_exists) looks. Its one
   // command line runs before the first prompt. Optional; skip if not served.
@@ -131,6 +173,7 @@ async function loadDisk(FS) {
     const r = await fetch('disk/AUTOEXEC.TXT');
     if (r.ok) FS.writeFile('/AUTOEXEC.TXT', new Uint8Array(await r.arrayBuffer()));
   } catch (e) { /* no autoexec: boot straight to the prompt */ }
+  return drives;
 }
 
 // ============ boot RunCPM ============
@@ -142,11 +185,179 @@ async function loadDisk(FS) {
 const BUILD = '20260711d';
 import('./runcpm.js?v=' + BUILD).then(async ({ default: createRunCPM }) => {
   const Module = await createRunCPM({ locateFile: (path, dir) => dir + path + '?v=' + BUILD });
+  globalThis.Module = Module;                 // handy for FS poking in the console
   // Drives live under the MEMFS cwd as A/0/... (FILEBASE "./").
-  await loadDisk(Module.FS);
+  const drives = await loadDisk(Module.FS);
+  // Always give the user one blank, writable scratch drive to upload into. Pick
+  // the first free letter after whatever the manifest shipped so it never
+  // collides with a real drive.
+  const dataDrive = nextFreeLetter(drives);
+  try { Module.FS.mkdir('/' + dataDrive); } catch (e) {}
+  try { Module.FS.mkdir('/' + dataDrive + '/0'); } catch (e) {}
+  buildDiskManager(Module.FS, drives, dataDrive);
   term.focus();
   Module.callMain([]);   // runs the CP/M CCP loop; _getch yields via ASYNCIFY
 }).catch(e => { term.write('\r\nboot error: ' + e + '\r\n'); console.error(e); });
+
+// ============ disk manager: upload/download between host and MEMFS ============
+// RunCPM has NO disk-image layer: each "drive" is just a MEMFS dir (/X/0/) that
+// RunCPM re-reads live on every BDOS call. So upload = write bytes to /X/0/NAME,
+// download = read them back. A file we drop in shows up on the next DIR with no
+// remount, and a file CP/M creates (SAVE, PIP, compiler output) is downloadable
+// the moment it exists. The only rule the host side must enforce is CP/M's
+// filename grammar: 8.3, upper-case, no spaces.
+function nextFreeLetter(used) {
+  const set = new Set(used);
+  for (let c = 65; c <= 80; c++) { const L = String.fromCharCode(c); if (!set.has(L)) return L; }
+  return 'P';
+}
+
+// Coerce an arbitrary host filename into a legal CP/M 8.3 name. Anything CP/M
+// can't represent (lower case, spaces, extra dots, long stems) gets folded or
+// truncated rather than silently mangled by the BDOS later.
+function cpmName(name) {
+  const up = name.toUpperCase().replace(/[^A-Z0-9._]/g, '');
+  const dot = up.lastIndexOf('.');
+  let stem = dot >= 0 ? up.slice(0, dot) : up;
+  let ext  = dot >= 0 ? up.slice(dot + 1) : '';
+  stem = stem.replace(/\./g, '').slice(0, 8) || 'FILE';
+  ext  = ext.replace(/\./g, '').slice(0, 3);
+  return ext ? stem + '.' + ext : stem;
+}
+
+// NOTE: memory-only. MEMFS is RAM, so uploads and CP/M-created files vanish on
+// refresh. We warn the user after each upload rather than persist. (Persisting
+// the DATA drive to IndexedDB is a small, low-risk follow-up if wanted.)
+function buildDiskManager(FS, drives, dataDrive) {
+  const all = drives.includes(dataDrive) ? drives : drives.concat(dataDrive);
+  const diskEl   = document.getElementById('disk');
+  const drivesEl = document.getElementById('drives');
+  const filesEl  = document.getElementById('files');
+  const upInput  = document.getElementById('upinput');
+  const upBtn    = document.getElementById('upbtn');
+  const upDrive  = document.getElementById('updrive');
+  const upbarEl  = document.getElementById('upbar');
+  const warnEl   = document.getElementById('warn');
+  let sel = null;   // nothing selected -> file list stays hidden until a chip click
+
+  const dir = (d) => '/' + d + '/0/';
+  const fmtSize = (n) => n < 1024 ? n + ' B' : (n / 1024).toFixed(1) + ' K';
+
+  let warnTimer = null;
+  function warn(msg) {
+    warnEl.textContent = msg; warnEl.style.display = 'block';
+    clearTimeout(warnTimer);
+    warnTimer = setTimeout(() => { warnEl.style.display = 'none'; }, 6000);
+  }
+
+  function download(d, name) {
+    const buf = FS.readFile(dir(d) + name);              // Uint8Array, raw bytes
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([buf]));
+    a.download = name;
+    a.dataset.progDl = '1';   // marks a programmatic click so click-away ignores it
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  async function writeFiles(fileList) {
+    const added = [];
+    for (const file of fileList) {
+      const nm = cpmName(file.name);
+      FS.writeFile(dir(sel) + nm, new Uint8Array(await file.arrayBuffer()));
+      added.push(nm);
+    }
+    refresh();
+    warn('Added ' + added.join(', ') + ' to ' + sel + ': (in memory only, lost on refresh). '
+         + 'Download anything you want to keep.');
+  }
+
+  // Chips are built ONCE and kept in the DOM; refresh only toggles their .sel
+  // class. Rebuilding them each refresh would detach the just-clicked chip, and
+  // the bubbling document click-away handler would then see its target as
+  // "outside" the panel and immediately close the list again.
+  function buildChips() {
+    drivesEl.replaceChildren();
+    for (const d of all) {
+      const chip = document.createElement('div');
+      chip.className = 'drive';
+      chip.dataset.drive = d;
+      const tag = d === dataDrive ? 'DATA' : '';
+      chip.innerHTML = '<span class="ic">&#128190;</span><span class="lbl">' + d +
+                       ':</span><span class="tag">' + tag + '</span>';
+      chip.onclick = () => { sel = (sel === d ? null : d); refresh(); };
+      drivesEl.appendChild(chip);
+    }
+  }
+
+  function refresh() {
+    for (const chip of drivesEl.children)
+      chip.classList.toggle('sel', chip.dataset.drive === sel);
+    // no drive selected -> hide the list + upload bar entirely
+    if (sel === null) {
+      filesEl.style.display = 'none';
+      upbarEl.style.display = 'none';
+      return;
+    }
+    filesEl.style.display = '';
+    upbarEl.style.display = 'flex';
+    upDrive.textContent = sel;
+
+    filesEl.replaceChildren();
+    let names;
+    try { names = FS.readdir(dir(sel)).filter(n => n !== '.' && n !== '..'); }
+    catch (e) { names = []; }
+    names.sort();
+    if (!names.length) {
+      const e = document.createElement('div'); e.className = 'empty'; e.textContent = '(empty)';
+      filesEl.appendChild(e);
+    } else {
+      for (const name of names) {
+        let size = 0;
+        try { size = FS.stat(dir(sel) + name).size; } catch (e) {}
+        const row = document.createElement('div'); row.className = 'row';
+        const fn = document.createElement('span'); fn.className = 'fn'; fn.textContent = name;
+        const sz = document.createElement('span'); sz.className = 'sz'; sz.textContent = fmtSize(size);
+        const dl = document.createElement('a'); dl.className = 'dl'; dl.textContent = '↓';
+        dl.href = '#'; dl.title = 'download';
+        dl.onclick = (ev) => { ev.preventDefault(); download(sel, name); };
+        row.append(fn, sz, dl);
+        filesEl.appendChild(row);
+      }
+    }
+    const hint = document.createElement('div');
+    hint.className = 'drophint'; hint.textContent = 'drag files here to add them to ' + sel + ':';
+    filesEl.appendChild(hint);
+  }
+
+  upBtn.onclick = () => upInput.click();
+  upInput.onchange = async () => {
+    if (sel !== null) await writeFiles(upInput.files);
+    upInput.value = '';   // let the same file be re-picked later
+  };
+
+  // ---- drag & drop onto the file list ----
+  filesEl.addEventListener('dragover', (ev) => {
+    ev.preventDefault(); ev.dataTransfer.dropEffect = 'copy'; filesEl.classList.add('drag');
+  });
+  filesEl.addEventListener('dragleave', () => filesEl.classList.remove('drag'));
+  filesEl.addEventListener('drop', async (ev) => {
+    ev.preventDefault(); filesEl.classList.remove('drag');
+    if (sel !== null && ev.dataTransfer.files.length) await writeFiles(ev.dataTransfer.files);
+  });
+
+  // ---- click away from the panel hides the list ----
+  document.addEventListener('click', (ev) => {
+    if (sel === null) return;
+    if (diskEl.contains(ev.target)) return;        // clicks on chips/list stay open
+    if (ev.target.dataset && ev.target.dataset.progDl) return;  // our own download anchor
+    sel = null; refresh();
+  });
+
+  buildChips();
+  refresh();
+  globalThis.diskRefresh = refresh;   // call from console after a CP/M SAVE/PIP
+}
 </script>
 </body>
 </html>
