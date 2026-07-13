@@ -97,9 +97,12 @@ let outBuf = [];
 })();
 
 // ============ keyboard -> CP/M input queue ============
-// xterm.onData already yields terminal bytes (Enter=\r, Ctrl-C=0x03, etc). Two
-// fixups for CP/M: the arrow keys, and DEL(0x7f) -> BS(0x08) since CP/M expects
-// backspace as 0x08.
+// xterm.onData already yields terminal bytes (Enter=\r, Ctrl-C=0x03, Backspace
+// =DEL/0x7f). Our only fixup is the arrow keys (below). We pass DEL(0x7f)
+// through unchanged: RunCPM's CCP treats 0x08 and 0x7f alike as delete-left
+// (cpm.h C_READSTR), and WordStar-family editors like ZDE need the real DEL to
+// do a *destructive* backspace - folding it to ^H there only walks the cursor
+// left without erasing the character.
 //
 // --- arrow-key remapping profiles ---
 // CP/M programs never agreed on cursor keys, so we translate the terminal's
@@ -123,9 +126,7 @@ const inQueue = [];
 term.onData((data) => {
   if (ARROW && ARROW[data] !== undefined) { inQueue.push(ARROW[data]); return; }
   for (let i = 0; i < data.length; i++) {
-    let c = data.charCodeAt(i) & 0xFF;
-    if (c === 0x7f) c = 0x08;   // DEL -> BS
-    inQueue.push(c);
+    inQueue.push(data.charCodeAt(i) & 0xFF);   // DEL(0x7f) passes through raw
   }
 });
 term.focus();
